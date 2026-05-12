@@ -1,23 +1,26 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
 
+// WIFI
 const char* ssid = "STARLINK V3";
 const char* password = "Kivuhills@2025";
 
-/*
-   YOUR COMPUTER IP ADDRESS
-*/
-String serverName =
-"http://192.168.1.179/ultrasonic_project/save_sensor.php";
+// SERVER URL
+const char* serverName = "http://192.168.1.179/ultrasonic_project/save_sensor.php";
 
+// ULTRASONIC PINS
 #define TRIG D5
 #define ECHO D6
+
+// LED PINS
+#define RED_LED     D1
+#define YELLOW_LED  D2
+#define GREEN_LED   D7
 
 WiFiClient client;
 
 long duration;
-float distance = 0;
-
+float currentDistance = 0;
 float previousDistance = 0;
 
 void setup() {
@@ -27,26 +30,34 @@ void setup() {
   pinMode(TRIG, OUTPUT);
   pinMode(ECHO, INPUT);
 
+  pinMode(RED_LED, OUTPUT);
+  pinMode(YELLOW_LED, OUTPUT);
+  pinMode(GREEN_LED, OUTPUT);
+
+  // LEDs OFF
+  digitalWrite(RED_LED, LOW);
+  digitalWrite(YELLOW_LED, LOW);
+  digitalWrite(GREEN_LED, LOW);
+
+  // CONNECT WIFI
   WiFi.begin(ssid, password);
 
-  Serial.println("");
-  Serial.print("Connecting to WiFi");
+  Serial.print("Connecting");
 
   while (WiFi.status() != WL_CONNECTED) {
-
     delay(500);
     Serial.print(".");
   }
 
-  Serial.println("");
+  Serial.println();
   Serial.println("WiFi Connected");
 
-  Serial.print("ESP IP Address: ");
+  Serial.print("ESP IP: ");
   Serial.println(WiFi.localIP());
 }
 
 /*
-    READ DISTANCE
+   GET DISTANCE
 */
 float getDistance() {
 
@@ -55,25 +66,54 @@ float getDistance() {
 
   digitalWrite(TRIG, HIGH);
   delayMicroseconds(10);
-
   digitalWrite(TRIG, LOW);
 
   duration = pulseIn(ECHO, HIGH, 30000);
 
-  /*
-      HANDLE NO ECHO
-  */
+  // NO PULSE
   if (duration == 0) {
     return -1;
   }
 
-  distance = duration * 0.034 / 2;
+  float distance = duration * 0.0343 / 2;
 
   return distance;
 }
 
 /*
-    SEND DATA TO PHP SERVER
+   UPDATE LEDs
+*/
+void updateLEDs(float dist) {
+
+  // TURN OFF ALL LEDs
+  digitalWrite(RED_LED, LOW);
+  digitalWrite(YELLOW_LED, LOW);
+  digitalWrite(GREEN_LED, LOW);
+
+  // RED
+  if (dist > 0 && dist <= 10) {
+
+    digitalWrite(RED_LED, HIGH);
+
+  }
+
+  // YELLOW
+  else if (dist > 10 && dist <= 20) {
+
+    digitalWrite(YELLOW_LED, HIGH);
+
+  }
+
+  // GREEN
+  else {
+
+    digitalWrite(GREEN_LED, HIGH);
+
+  }
+}
+
+/*
+   SEND DATA TO SERVER
 */
 void sendData(float dist, bool motion) {
 
@@ -81,66 +121,88 @@ void sendData(float dist, bool motion) {
 
     HTTPClient http;
 
-    Serial.println("Sending data to server...");
-
     http.begin(client, serverName);
 
     http.addHeader("Content-Type", "application/json");
 
+    // JSON DATA
     String jsonData = "{";
-    jsonData += "\"distance\":" + String(dist, 2) + ",";
-    jsonData += "\"motion\":" + String(motion ? "true" : "false");
+    jsonData += "\"distance\":";
+    jsonData += String(dist, 2);
+    jsonData += ",";
+    jsonData += "\"motion\":";
+    jsonData += motion ? "true" : "false";
     jsonData += "}";
 
-    Serial.println("JSON:");
+    Serial.print("Sending: ");
     Serial.println(jsonData);
 
-    int responseCode = http.POST(jsonData);
+    int httpResponseCode = http.POST(jsonData);
 
-    Serial.print("HTTP Response Code: ");
-    Serial.println(responseCode);
+    Serial.print("HTTP Response: ");
+    Serial.println(httpResponseCode);
 
-    /*
-        PRINT SERVER RESPONSE
-    */
-    String response = http.getString();
+    if (httpResponseCode > 0) {
 
-    Serial.println("Server Response:");
-    Serial.println(response);
+      String response = http.getString();
+
+      Serial.print("Server Response: ");
+      Serial.println(response);
+
+    } else {
+
+      Serial.print("Error: ");
+      Serial.println(http.errorToString(httpResponseCode));
+
+    }
 
     http.end();
 
   } else {
 
     Serial.println("WiFi Disconnected");
+
   }
 }
 
 void loop() {
 
-  float currentDistance = getDistance();
+  currentDistance = getDistance();
 
-  /*
-      INVALID SENSOR READING
-  */
+  // SENSOR ERROR
   if (currentDistance < 0) {
 
     Serial.println("No object detected");
 
     delay(2000);
+
     return;
   }
 
+  /*
+     MOTION DETECTION
+  */
   bool motionDetected = false;
 
-  /*
-      MOTION DETECTION
-  */
-  if (abs(currentDistance - previousDistance) > 8) {
+  float difference = abs(currentDistance - previousDistance);
+
+  if (difference > 5) {
 
     motionDetected = true;
+
   }
 
+  // UPDATE LEDs
+  updateLEDs(currentDistance);
+
+  // FORCE NO MOTION IF FAR
+  if (currentDistance > 30) {
+
+    motionDetected = false;
+
+  }
+
+  // SERIAL OUTPUT
   Serial.print("Distance: ");
   Serial.print(currentDistance);
   Serial.println(" cm");
@@ -153,11 +215,13 @@ void loop() {
     Serial.println("NO");
   }
 
+  Serial.println("----------------------");
+
+  // SEND TO SERVER
   sendData(currentDistance, motionDetected);
 
+  // SAVE PREVIOUS VALUE
   previousDistance = currentDistance;
-
-  Serial.println("------------------");
 
   delay(3000);
 }
