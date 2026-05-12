@@ -27,8 +27,36 @@
             color:#333;
         }
 
-        .status{
-            font-size:22px;
+        table{
+            width:100%;
+            border-collapse:collapse;
+            margin-top:20px;
+        }
+
+        table th{
+            background:#007bff;
+            color:white;
+            padding:12px;
+            text-align:left;
+        }
+
+        table td{
+            padding:10px;
+            border-bottom:1px solid #ddd;
+        }
+
+        tr:nth-child(even){
+            background:#f9f9f9;
+        }
+
+        .motion-yes{
+            color:red;
+            font-weight:bold;
+        }
+
+        .motion-no{
+            color:green;
+            font-weight:bold;
         }
 
     </style>
@@ -50,6 +78,31 @@
 <div class="card">
 
     <canvas id="chart"></canvas>
+
+</div>
+
+<div class="card">
+
+    <h2>Detected Distance Records</h2>
+
+    <table>
+
+        <thead>
+
+            <tr>
+                <th>ID</th>
+                <th>Distance (cm)</th>
+                <th>Motion</th>
+                <th>Date & Time</th>
+            </tr>
+
+        </thead>
+
+        <tbody id="tableBody">
+
+        </tbody>
+
+    </table>
 
 </div>
 
@@ -76,7 +129,8 @@ const chart = new Chart(ctx, {
 
             borderWidth: 2,
 
-            fill: false
+            fill: false,
+            tension: 0.3
 
         }]
     }
@@ -91,25 +145,76 @@ async function fetchData(){
 
     if(data.length > 0){
 
+        /*
+            LATEST DATA
+        */
         const latest = data[0];
 
         document.getElementById("distance").innerHTML =
             `Distance: ${latest.distance} cm`;
 
         document.getElementById("motion").innerHTML =
-            `Motion: ${latest.motion}`;
+            `Motion: ${latest.motion == 1 ? "YES" : "NO"}`;
 
+        /*
+            UPDATE CHART
+        */
         chart.data.labels =
-            data.map((item, index) => index);
+            data.map((item, index) => index + 1);
 
         chart.data.datasets[0].data =
             data.map(item => item.distance);
 
         chart.update();
+
+        /*
+            UPDATE TABLE
+        */
+        let tableRows = "";
+
+        data.forEach(item => {
+
+            tableRows += `
+                <tr>
+
+                    <td>${item.id}</td>
+
+                    <td>${item.distance} cm</td>
+
+                    <td class="${
+                        item.motion == 1
+                        ? 'motion-yes'
+                        : 'motion-no'
+                    }">
+
+                        ${
+                            item.motion == 1
+                            ? 'YES'
+                            : 'NO'
+                        }
+
+                    </td>
+
+                    <td>${item.created_at}</td>
+
+                </tr>
+            `;
+        });
+
+        document.getElementById("tableBody").innerHTML =
+            tableRows;
     }
 }
 
+/*
+    LOAD DATA EVERY 3 SECONDS
+*/
 setInterval(fetchData, 3000);
+
+/*
+    INITIAL LOAD
+*/
+fetchData();
 
 </script>
 
